@@ -1,0 +1,472 @@
+#+title: ReScript Bindings Cookbook
+
+This cookbook is an update to the [[https://github.com/yawaramin/bucklescript-bindings-cookbook][yawaramin's cookbook]]!
+
+** Introduction
+    Writing =ReScript= bindings can be somewhere between an art and a science, taking some learning investment into both the =JavaScript= and =ReScript= type systems to get a proper feel for it.
+
+ This cookbook aims to be a quickstart, task-focused guide for writing bindings. The idea is that you have in mind some =JavaScript= that you want to write, and look up the binding that should (hopefully) produce that output =JavaScript=.
+
+ Along the way, I will try to introduce standard types for modelling various =JavaScript= data.
+
+** Raw JavaScript
+    /ReScript:/
+    #+begin_src rescript
+      let add = %raw("(a, b) => a + b")
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let result = add(2, 2)
+    #+end_src
+
+** Globals
+*** Reference a global value
+    /JavaScript:/
+    #+begin_src js
+      setTimeout(() => console.log("Hey there"), 40 * 100);
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @val external setTimeout: (unit => unit, int) => unit = "setTimeout"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      setTimeout(() => Js.Console.log("Hey There"), 40 * 100)
+    #+end_src
+
+    Ref: https://rescript-lang.org/docs/manual/latest/interop-cheatsheet#global-value
+
+*** Check if the global value exists
+    /JavaScript:/
+    #+begin_src js
+      if (window) console.log("window exists")
+      else console.log("window does not exist")
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      swicth (%external window) {
+      | Some(_) => Js.Console.log("window exists")
+      | None => Js.Console.log("window does not exist")
+      }
+    #+end_src
+
+    =%external NAME= makes =NAME= available as an value of type =option<'a>=, meaning its wrapped value is compatible with any type. I recommend that, if you use the value, to cast it safely into a know type first.
+
+*** Reference a variable in a global module
+    /JavaScript:/
+    #+begin_src js
+      Math.PI;
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @val @scope("Math") 
+      external pi: float = "PI"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let circleArea = (~radio: float) => pi * (radio * radio)
+    #+end_src
+
+    Ref: https://rescript-lang.org/docs/manual/latest/interop-cheatsheet#global-modules-value
+
+** Modules
+*** Function in CJS/ES module
+    /JavaScript:/
+    #+begin_src js
+      const path = require('path');
+
+      const dir = path.join('a', 'b');
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @module("path") external join: (string, string) => string = "join"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let dir = join("a", "b")
+    #+end_src
+
+    Ref: https://rescript-lang.org/docs/manual/latest/bind-to-js-function
+
+*** Import entire module as a value
+    /JavaScript:/
+    #+begin_src js
+      const foo = require('foo')
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @module external foo: int => unit = "foo"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let () = foo(1)
+    #+end_src
+
+*** Import ES6 module default export
+    /JavaScript:/
+    #+begin_src js
+      import foo from 'foo';
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @module("foo") external foo: int => unit  "default"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let () = foo(1)
+    #+end_src
+
+*** A function scoped inside an object in a module
+    /JavaScript:/
+    #+begin_src js
+      import { foo } from 'foo';
+
+      foo.bar.baz();
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      module Foo = {
+        module Bar = {
+          @module("foo") @scope("bar")
+          external baz: unit => unit = "baz"
+        }
+      }
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let () = Foo.Bar.baz()
+    #+end_src
+
+    It's not necessary to nest the binding inside =ReScript= modules, but mirroring the structure of the =JavaScript= module layout does make the binding more discoverable.
+
+    Note that =@scope= works not just with =@module=, but also with =@val= (as shown earlier), and with combinations of =@module=, =@new= (covered in the OOP section), etc.
+
+    Tip: the =@scope(...)= attribute supports an arbitrary level of scoping by passing the scope as a tuple argument, e.g. =@scope(("a", "b", "c"))=.
+
+** Functions
+*** Functions with rest args
+    /JavaScript:/
+    #+begin_src js
+      const path = require('path');
+
+      const xs = ['b', 'c'];
+      const dir = path.join('a', ...xs);
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @module("path") @variadic
+      external join: array<string> => string = "join"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let dir = join(["a", "b", "c"])
+    #+end_src
+
+   Note that the rest args must all be of the same type for =@variadic= to work. If they really have different types, then more advanced techniques are needed. 
+
+    Ref: https://rescript-lang.org/docs/manual/latest/bind-to-js-function#variadic-function-arguments
+
+*** Call a function with named arguments for readability
+    /ReScript:/
+    #+begin_src rescript
+      @val external range(~start: int, ~stop: int, ~step: int) => array<int> = "range"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let nums = range(~start=1, ~stop=10, ~step=2)
+    #+end_src
+
+*** Polymorphic function
+    /JavaScript:/
+    #+begin_src js
+      foo("string");
+      foo(true);
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @val external fooString: string => unit = "foo"
+      @val external fooBool: bool => unit = "foo"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      fooString("string")
+      fooBool(false)
+    #+end_src
+
+    Ref: https://rescript-lang.org/docs/manual/latest/bind-to-js-function#modeling-polymorphic-function
+
+*** Function with optional final argument(s)
+    /JavaScript:/
+    #+begin_src js
+      foo(1);
+      foo(1, 2);
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @val external foo: (int, int=?) => unit = "foo"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      foo(1, ())
+      foo(1, 2)
+    #+end_src
+
+    If a =ReScript= function or binding has an optional parameter, it needs a positional parameter at the end of the parameter list to help the compiler understand when function application is finished and the function can actually execute. If this seems tedious, remember that no other language gives you out-of-the-box curried parameters and named parameters and optional parameters.
+
+*** Options object argument
+    /JavaScript:/
+    #+begin_src js
+      const fs = require('fs');
+
+      fs.mkdir('src', { recursive: true });
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      type mkdirOptions
+
+      @obj external mkdirOptions: (~recursive: bool=?, unit) => mkdirOptions = ""
+      @module("fs") external mkdir: (string, ~options: mkdirOptions=?, unit) => unit = "mkdir"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let () = mkdir("src", ())
+      let () = mkdir("src/main", ~options=mkdirOptions(~recursive=true, ()), ())
+    #+end_src
+
+    The =@obj= attribute allows creating a function that will output a =JavaScript= object. There are simpler ways to create =JavaScript= objects (see OOP section), but this is the only way that allows omitting optional fields like recursive from the output object. By making the binding parameter optional (~\nbsprecursive: bool=?~), you indicate that the field is also optional in the object.
+
+**** Alternative way
+    Calling a function like ~mkdir("src/main", \nbspoptions=..., ())~ can be syntactically pretty heavy, for the benefit of allowing the optional argument. But there is another way: binding to the same underlying function twice and treating the different invocations as overloads.
+
+    /ReScript:/
+    #+begin_src rescript
+      @module("fs") external mkdir: string => unit = "mkdir"
+      @module("fs") external mkdirWith: (string, mkdirOptions) => unit = "mkdir"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let () = mkdir("src/main")
+      let () = mkdirWith("src/main", mkdirOptions(~recursive=true, ()))
+    #+end_src
+
+    This way you don't need optional arguments, and no final =()= argument for =mkdirWith=.
+
+*** Function with callback
+    /Javascript:/
+    #+begin_src js
+      const fs = require('fs')
+
+      const cb = (err, data) => err ? console.log("ERROR") : console.log(data);
+      fs.readFile('./file.txt', cb);
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      type fileError = {
+        errno: int,
+        code: string,
+        syscall: string,
+        path: string
+      }
+
+      @module("fs") 
+      external readFile: (string, @uncurry (option<fileError>, option<string>) => unit) => unit = "readFile"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      readFile("./file.txt", (err, data) => {
+        switch ((err, data)) {
+        | (None, Some(data)) => Js.Conole.log(data)
+        | (Some(_), None) => Js.Console.log("ERROR")
+        | _ => Js.Console.log("That clause will never happen...")
+        }
+      })
+    #+end_src
+
+** Objects
+*** Create an object
+    /JavaScript:/
+    #+begin_src js
+      const person = {name: "jhon", age: 18};
+
+      const {name, age} = person;
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      type person = {
+        name: string,
+        age: int
+      }
+
+      let person = {name: "jhon", age: 18}
+      let {name, age} = person
+    #+end_src
+
+    Ref: https://rescript-lang.org/docs/manual/latest/bind-to-js-object#bind-to-record-like-js-objects
+
+** Classes and OOP
+    In =ReScript= it's idiomatic to bind to class properties and methods as functions which take the instance as just a normal function argument. So e.g., instead of 
+    #+begin_src js
+      const foo = new Foo();
+      foo.bar();
+    #+end_src
+
+    You'll write:
+    #+begin_src rescript
+      let foo = Foo.make()
+      let () = Foo.bar(foo)
+    #+end_src
+
+    Note that many of techiniques shown in the [[**Functions]] secton are applicable to the instance members shown below.
+
+**** I don't see what I need here
+    Try looking in the [[**Functions]] section; in =ReScript= functions and instance methods can share many of the same binding techniques.
+
+*** Call a class constructor
+    /JavaScript:/
+    #+begin_src js
+      const foo = new Foo();
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      // Foo.res or module Foo { ... }
+      type t
+
+      @new external make = unit => t = "Foo"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let foo = Foo.make()
+    #+end_src
+    
+    Note the abstract type =t=. In =ReScript= you will model any class that's not a shared data type as an abstract data type. This means you won't expose the internals of the definition of the class, only its interface (accessors, methods), using functions which include the type t in their signatures. This is shown in the next few sections.
+
+    A =ReScript= function binding doesn't have the context that it's binding to a JavaScript class like Foo, so you will want to explicitly put it inside a corresponding module Foo to denote the class it belongs to. In other words, model =JavaScript= classes as =ReScript= modules.
+
+    Ref: https://rescript-lang.org/docs/manual/latest/bind-to-js-object#bind-to-a-js-object-thats-a-class
+
+*** Get a instance property
+    /JavaScript:/
+    #+begin_src js
+      const foo = new Foo();
+      let bar = foo.bar;
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      // In Foo.res or module Foo { ... }
+      // [...]
+      @get external bar: t => int "bar"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let foo = Foo.make()
+      let bar = Foo.bar(foo)
+    #+end_src
+
+*** Call a instance method
+    /JavaScript:/
+    #+begin_src js
+      const foo = new Foo();
+
+      foo.baz();
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      // In Foo.res or module Foo { ... }
+      @send external baz: t => unit = "baz"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let foo = Foo.make()
+      let () = Foo.baz(foo)
+    #+end_src
+
+** Null and undefined
+*** Check for undefined
+    /JavaScript:/
+    #+begin_src js
+      const foo = new Foo();
+
+      // if (!foo.bar)
+      if (foo.bar === undefined) console.log('undefined');
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @get external bar: t => option<int> = "bar"
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let foo = Foo.make()
+      let bar = Foo.bar(foo)
+
+      switch (bar) {
+      | Some(val) => Js.Console.log(val)
+      | None => Js.Console.log("undefined")
+      }
+    #+end_src
+
+    If you know some value may be =undefined= (but not =null=, see next section), and if you know its type is monomorphic (i.e. not generic), then you can model it directly as an =option(...)= type.
+
+*** Check for null and undefined
+    /JavaScript:/
+    #+begin_src js
+      const foo = new Foo();
+
+      // if (!foo.bar)
+      if (foo.bar === null || foo.bar === undefined) 
+        console.log("null or undefined");
+    #+end_src
+
+    /ReScript:/
+    #+begin_src rescript
+      @get @return(nullable) external bar: t => option<t>
+    #+end_src
+
+    /Usage:/
+    #+begin_src rescript
+      let foo = Foo.make()
+      let bar = Foo.bar(foo)
+
+      switch (bar) {
+      | Some(val) => Js.Console.log(val)
+      | None => Js.Console.log("undefined")
+      }
+    #+end_src
+
+    If you know the value is 'nullable' (i.e. could be =null= or =undefined=), or if the value could be polymorphic, then =@return(nullable)= is appropriate to use.
+
+    Note that this attribute requires the return type of the binding to be an =option(...)= type as well.
