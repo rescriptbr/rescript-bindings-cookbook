@@ -158,6 +158,9 @@ This cookbook is an update to the [[https://github.com/yawaramin/bucklescript-bi
     Tip: the =@scope(...)= attribute supports an arbitrary level of scoping by passing the scope as a tuple argument, e.g. =@scope(("a", "b", "c"))=.
 
 ** Functions
+:PROPERTIES:
+:CUSTOM_ID: functions
+:END:
 *** Functions with rest args
     /JavaScript:/
     #+begin_src js
@@ -343,10 +346,10 @@ This cookbook is an update to the [[https://github.com/yawaramin/bucklescript-bi
       let () = Foo.bar(foo)
     #+end_src
 
-    Note that many of techiniques shown in the [[**Functions]] secton are applicable to the instance members shown below.
+    Note that many of techiniques shown in the [[#functions][Functions]] secton are applicable to the instance members shown below.
 
 **** I don't see what I need here
-    Try looking in the [[**Functions]] section; in =ReScript= functions and instance methods can share many of the same binding techniques.
+    Try looking in the [[#functions][Functions]] section; in =ReScript= functions and instance methods can share many of the same binding techniques.
 
 *** Call a class constructor
     /JavaScript:/
